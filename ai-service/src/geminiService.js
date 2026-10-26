@@ -1,3 +1,11 @@
+const path = require('path');
+const dotenv = require('dotenv');
+
+// Ensure root .env is loaded if not already in process.env
+if (!process.env.GEMINI_API_KEY) {
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+}
+
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { validateAnalysis } = require('./analysisValidator');
 
@@ -34,22 +42,22 @@ function cleanJsonOutput(rawText) {
  */
 async function generateAnalysisFromText(documentText) {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey || apiKey.trim() === '') {
+  if (!apiKey || apiKey.trim() === '' || apiKey.includes('your_gemini_api_key_here')) {
     throw new Error(
-      'GEMINI_API_KEY is not configured. Please set a valid Gemini API key in your .env file.'
+      'GEMINI_API_KEY is not configured in .env. Please set a valid Gemini API key in your root .env file.'
     );
   }
 
   const genAI = new GoogleGenerativeAI(apiKey.trim());
 
-  // Use gemini-2.5-flash as default, which is fast and supports JSON schema
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
-    generationConfig: {
-      responseMimeType: 'application/json',
-      temperature: 0.2
-    }
-  });
+  // Verified active model chain with automatic fallback
+  const preferredModel = process.env.GEMINI_MODEL;
+  const candidateModels = [
+    preferredModel,
+    'gemini-3.5-flash',
+    'gemini-3-flash-preview',
+    'gemini-3.8-flash'
+  ].filter((m, idx, arr) => m && arr.indexOf(m) === idx);
 
   const prompt = `You are a rigorous document intelligence analyzer.
 Your task is to analyze the provided document text and produce a structured JSON object.
@@ -97,24 +105,40 @@ ${documentText}
 `;
 
   let responseText = '';
-  try {
-    const result = await model.generateContent(prompt);
-    responseText = result.response.text();
-  } catch (apiError) {
-    // If gemini-2.5-flash fails or is unavailable with the key, attempt with gemini-1.5-flash fallback
-    if (apiError.status === 404 || (apiError.message && apiError.message.includes('not found'))) {
-      const fallbackModel = genAI.getGenerativeModel({
-        model: 'gemini-1.5-flash',
+  let modelUsed = '';
+  let lastError = null;
+
+  for (const modelName of candidateModels) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
         generationConfig: {
           responseMimeType: 'application/json',
           temperature: 0.2
         }
       });
-      const result = await fallbackModel.generateContent(prompt);
+      const result = await model.generateContent(prompt);
       responseText = result.response.text();
-    } else {
-      throw new Error(`Gemini API error: ${apiError.message || 'Request failed'}`);
+      modelUsed = modelName;
+      break;
+    } catch (apiError) {
+      lastError = apiError;
+      // If 404 (model not found/deprecated), 503 (high demand), or retryable error, try next candidate model
+      const status = apiError.status;
+      const msg = apiError.message || '';
+      const isRetryable = status === 404 || status === 503 ||
+                          msg.includes('not found') || msg.includes('no longer available') ||
+                          msg.includes('high demand') || msg.includes('overloaded');
+      if (isRetryable && candidateModels.indexOf(modelName) < candidateModels.length - 1) {
+        console.warn(`Gemini model ${modelName} returned notice (${status || 'error'}), attempting next fallback model...`);
+        continue;
+      }
+      throw new Error(`Gemini API error (${modelName}): ${apiError.message || 'Request failed'}`);
     }
+  }
+
+  if (!responseText) {
+    throw new Error(`Gemini API error: ${lastError?.message || 'All candidate models failed'}`);
   }
 
   const cleanedJson = cleanJsonOutput(responseText);
@@ -128,6 +152,7 @@ ${documentText}
 
   // Validate and sanitize data
   const validated = validateAnalysis(parsedData);
+  validated.modelName = modelUsed;
   return validated;
 }
 

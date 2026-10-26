@@ -1,11 +1,12 @@
 import React from 'react';
-import { FileText, Plus, BookOpen, Layers } from 'lucide-react';
+import { FileText, Plus, MessageSquare } from 'lucide-react';
 
 export default function Sidebar({
   documentCount = 0,
   activeDocument,
   onNavigateHome,
-  onOpenUpload
+  onOpenUpload,
+  onOpenWorkspaceChat
 }) {
   return (
     <aside className="sidebar">
@@ -27,6 +28,18 @@ export default function Sidebar({
           </div>
           <span className="nav-badge">{documentCount}</span>
         </button>
+
+        {documentCount > 0 && (
+          <button
+            className="sidebar-nav-item"
+            onClick={onOpenWorkspaceChat}
+          >
+            <div className="nav-item-content">
+              <MessageSquare size={16} />
+              <span>Multi-Doc RAG</span>
+            </div>
+          </button>
+        )}
       </div>
 
       <div className="sidebar-footer">

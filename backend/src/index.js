@@ -1,14 +1,26 @@
 const path = require('path');
 const dotenv = require('dotenv');
 
-// Load root .env
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-dotenv.config();
+// Load .env from root project folder first, fallback to backend folder
+const rootEnvPath = path.resolve(__dirname, '../../.env');
+const backendEnvPath = path.resolve(__dirname, '../.env');
+dotenv.config({ path: rootEnvPath });
+dotenv.config({ path: backendEnvPath });
+
+/**
+ * Safe configuration check: confirms whether GEMINI_API_KEY is present
+ * without ever logging or exposing the actual secret key.
+ */
+function isGeminiConfigured() {
+  const key = process.env.GEMINI_API_KEY;
+  return Boolean(key && key.trim().length > 0 && !key.includes('your_gemini_api_key_here'));
+}
 
 const express = require('express');
 const cors = require('cors');
 const { checkDatabaseConnection } = require('./db');
 const documentRoutes = require('./routes/documentRoutes');
+const workspaceRoutes = require('./routes/workspaceRoutes');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
@@ -22,12 +34,11 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (e.g., mobile apps, curl, Postman)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1) {
       return callback(null, true);
     }
-    return callback(null, true); // Permissive in local dev environment
+    return callback(null, true);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
@@ -36,17 +47,30 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Health check endpoint
+// Health check endpoint with safe configuration status
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
     service: 'ai-knowledge-workspace-backend',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    geminiConfigured: isGeminiConfigured()
+  });
+});
+
+// Dedicated safe configuration check endpoint
+app.get('/api/config', (req, res) => {
+  res.status(200).json({
+    geminiConfigured: isGeminiConfigured(),
+    model: process.env.GEMINI_MODEL || 'gemini-3.5-flash',
+    database: process.env.DB_NAME || 'ai_knowledge_workspace'
   });
 });
 
 // Mount document routes
 app.use('/api/documents', documentRoutes);
+
+// Mount workspace routes
+app.use('/api/workspaces', workspaceRoutes);
 
 // Catch 404
 app.use((req, res) => {
@@ -62,6 +86,10 @@ const server = app.listen(PORT, async () => {
   console.log(`Backend API server running on: http://localhost:${PORT}`);
   console.log(`Frontend expected origin: http://localhost:5173`);
   console.log(`==============================================`);
+
+  // Safe configuration status check without exposing secrets
+  const hasGeminiKey = isGeminiConfigured();
+  console.log(`Gemini API: ${hasGeminiKey ? 'Configured (key detected in root .env)' : 'NOT configured (missing GEMINI_API_KEY in .env)'}`);
 
   // Verify database connection asynchronously
   const dbStatus = await checkDatabaseConnection();

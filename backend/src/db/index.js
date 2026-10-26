@@ -2,9 +2,11 @@ const path = require('path');
 const dotenv = require('dotenv');
 const { Pool } = require('pg');
 
-// Ensure root .env is loaded
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
-dotenv.config(); // fallback to local .env if present
+// Load .env from root project folder first, fallback to backend folder
+const rootEnvPath = path.resolve(__dirname, '../../../.env');
+const backendEnvPath = path.resolve(__dirname, '../../.env');
+dotenv.config({ path: rootEnvPath });
+dotenv.config({ path: backendEnvPath });
 
 const poolConfig = process.env.DATABASE_URL
   ? { connectionString: process.env.DATABASE_URL }

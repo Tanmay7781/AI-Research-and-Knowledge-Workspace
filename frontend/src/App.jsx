@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { MessageSquare } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import WorkspaceHeader from './components/WorkspaceHeader';
 import DocumentList from './components/DocumentList';
 import DocumentWorkspace from './components/DocumentWorkspace';
 import EmptyState from './components/EmptyState';
 import UploadModal from './components/UploadModal';
+import WorkspaceChatModal from './components/WorkspaceChatModal';
 import LoadingState from './components/LoadingState';
 import ErrorAlert from './components/ErrorAlert';
 import {
@@ -21,6 +23,7 @@ export default function App() {
   const [activeDocument, setActiveDocument] = useState(null);
   const [isLoadingDocs, setIsLoadingDocs] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isWorkspaceChatOpen, setIsWorkspaceChatOpen] = useState(false);
   const [analyzingDocIds, setAnalyzingDocIds] = useState([]);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
@@ -165,6 +168,7 @@ export default function App() {
         activeDocument={activeDocument}
         onNavigateHome={() => setActiveDocumentId(null)}
         onOpenUpload={() => setIsUploadOpen(true)}
+        onOpenWorkspaceChat={() => setIsWorkspaceChatOpen(true)}
       />
 
       {/* Main Viewport */}
@@ -174,8 +178,10 @@ export default function App() {
           activeDocument={activeDocument}
           onNavigateHome={() => setActiveDocumentId(null)}
           onOpenUpload={() => setIsUploadOpen(true)}
+          onOpenWorkspaceChat={() => setIsWorkspaceChatOpen(true)}
           onDeleteDocument={handleDeleteDocument}
           isDeleting={isDeleting}
+          hasDocuments={documents.length > 0}
         />
 
         {/* Scrollable Page Content */}
@@ -196,15 +202,24 @@ export default function App() {
                 <div>
                   <h1 className="workspace-title">Knowledge Workspace</h1>
                   <p className="workspace-description">
-                    Upload documents and turn them into structured knowledge.
+                    Upload documents, extract structured intelligence, and ask questions with Retrieval-Augmented Generation.
                   </p>
                 </div>
-                <button
-                  className="btn btn-primary"
-                  onClick={() => setIsUploadOpen(true)}
-                >
-                  + Upload PDF
-                </button>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setIsWorkspaceChatOpen(true)}
+                  >
+                    <MessageSquare size={16} />
+                    <span>Multi-Doc Chat</span>
+                  </button>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setIsUploadOpen(true)}
+                  >
+                    + Upload PDF
+                  </button>
+                </div>
               </div>
 
               <DocumentList
@@ -224,6 +239,13 @@ export default function App() {
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
         onUploadSuccess={handleUploadSuccess}
+      />
+
+      {/* Multi-Document Workspace Chat Modal */}
+      <WorkspaceChatModal
+        isOpen={isWorkspaceChatOpen}
+        onClose={() => setIsWorkspaceChatOpen(false)}
+        documents={documents}
       />
 
       {/* Error Toast */}

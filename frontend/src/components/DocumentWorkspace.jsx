@@ -8,13 +8,15 @@ import {
   Tag,
   Layers,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  MessageSquare
 } from 'lucide-react';
 import OverviewTab from './tabs/OverviewTab';
 import KeyPointsTab from './tabs/KeyPointsTab';
 import FlashcardsTab from './tabs/FlashcardsTab';
 import QuizTab from './tabs/QuizTab';
 import ImportantTermsTab from './tabs/ImportantTermsTab';
+import ChatTab from './tabs/ChatTab';
 
 export default function DocumentWorkspace({
   document,
@@ -32,6 +34,7 @@ export default function DocumentWorkspace({
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: BookOpen },
+    { id: 'chat', label: 'Chat (RAG)', icon: MessageSquare },
     { id: 'keypoints', label: 'Key Points', icon: CheckCircle2 },
     { id: 'flashcards', label: 'Flashcards', icon: Layers },
     { id: 'quiz', label: 'Quiz', icon: HelpCircle },
@@ -52,7 +55,16 @@ export default function DocumentWorkspace({
           </div>
         </div>
 
-        <div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Quick Chat Shortcut */}
+          <button
+            className={`btn ${activeTab === 'chat' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setActiveTab('chat')}
+          >
+            <MessageSquare size={16} />
+            <span>Document Chat</span>
+          </button>
+
           {!isAnalyzed && (
             <button
               className="btn btn-primary"
@@ -80,28 +92,32 @@ export default function DocumentWorkspace({
         </div>
       </div>
 
-      {/* If analyzed: show tabs navigation */}
-      {isAnalyzed && (
-        <div className="workspace-tabs">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <Icon size={16} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {/* Tabs navigation */}
+      <div className="workspace-tabs">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          // Hide analysis-specific tabs if document is not analyzed yet, except Chat
+          if (!isAnalyzed && tab.id !== 'overview' && tab.id !== 'chat') {
+            return null;
+          }
+          return (
+            <button
+              key={tab.id}
+              className={`tab-btn ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <Icon size={16} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Body Area */}
       <div className="tab-pane">
-        {isAnalyzed ? (
+        {activeTab === 'chat' ? (
+          <ChatTab document={document} />
+        ) : isAnalyzed ? (
           <>
             {activeTab === 'overview' && <OverviewTab analysis={analysis} />}
             {activeTab === 'keypoints' && <KeyPointsTab analysis={analysis} />}
@@ -124,26 +140,43 @@ export default function DocumentWorkspace({
             <p>
               The document analysis could not be generated. Check your backend logs or Gemini API key configuration and try again.
             </p>
-            <button
-              className="btn btn-primary"
-              onClick={() => onAnalyzeDocument(document.id)}
-            >
-              Retry Analysis
-            </button>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '1rem' }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => onAnalyzeDocument(document.id)}
+              >
+                Retry Analysis
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setActiveTab('chat')}
+              >
+                Open Document Chat
+              </button>
+            </div>
           </div>
         ) : (
           <div className="unanalyzed-banner">
             <Sparkles size={36} color="var(--primary)" style={{ marginBottom: '1rem' }} />
             <h3>This document has not been analysed yet.</h3>
             <p>
-              Run AI analysis to extract summaries, key takeaways, flashcards, quiz questions, and essential terminology.
+              Run AI analysis to extract summaries, key takeaways, flashcards, quiz questions, and essential terminology, or use Document Chat to query it right away.
             </p>
-            <button
-              className="btn btn-primary"
-              onClick={() => onAnalyzeDocument(document.id)}
-            >
-              Analyse Document
-            </button>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '1rem' }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => onAnalyzeDocument(document.id)}
+              >
+                Analyse Document
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setActiveTab('chat')}
+              >
+                <MessageSquare size={16} />
+                <span>Open Chat</span>
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -25,7 +25,7 @@ export async function getDocuments() {
 }
 
 /**
- * Fetch single document by ID (includes analysis if available)
+ * Fetch single document by UUID (includes analysis if available)
  */
 export async function getDocument(id) {
   const response = await fetch(`${API_BASE_URL}/documents/${id}`);
@@ -53,7 +53,7 @@ export async function uploadDocument(file) {
 /**
  * Request document analysis.
  * Backend checks PostgreSQL first; returns existing analysis if present without calling Gemini.
- * @param {number|string} id 
+ * @param {string} id 
  */
 export async function analyzeDocument(id) {
   const response = await fetch(`${API_BASE_URL}/documents/${id}/analyze`, {
@@ -68,8 +68,8 @@ export async function analyzeDocument(id) {
 }
 
 /**
- * Delete document and cascade delete its analysis
- * @param {number|string} id 
+ * Delete document and cascade delete its analysis & chunks
+ * @param {string} id 
  */
 export async function deleteDocument(id) {
   const response = await fetch(`${API_BASE_URL}/documents/${id}`, {
@@ -77,6 +77,76 @@ export async function deleteDocument(id) {
   });
 
   return await handleResponse(response);
+}
+
+/**
+ * Process document text chunking and vector embeddings for RAG
+ * @param {string} id 
+ */
+export async function processDocumentRAG(id) {
+  const response = await fetch(`${API_BASE_URL}/documents/${id}/process-rag`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
+
+  return await handleResponse(response);
+}
+
+/**
+ * Chat with a single document using vector similarity and grounded Gemini Q&A
+ * @param {string} id 
+ * @param {string} question 
+ */
+export async function chatWithDocument(id, question) {
+  const response = await fetch(`${API_BASE_URL}/documents/${id}/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ question })
+  });
+
+  return await handleResponse(response);
+}
+
+/**
+ * Chat across all documents in the workspace
+ * @param {string} question 
+ * @param {string} [workspaceId] 
+ */
+export async function chatWithWorkspace(question, workspaceId) {
+  const response = await fetch(`${API_BASE_URL}/documents/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ question, workspaceId })
+  });
+
+  return await handleResponse(response);
+}
+
+/**
+ * Fetch chunks for a document
+ * @param {string} id 
+ */
+export async function getDocumentChunks(id) {
+  const response = await fetch(`${API_BASE_URL}/documents/${id}/chunks`);
+  const data = await handleResponse(response);
+  return data.chunks || [];
+}
+
+/**
+ * Semantic search in a document
+ * @param {string} id 
+ * @param {string} query 
+ */
+export async function searchDocument(id, query) {
+  const response = await fetch(`${API_BASE_URL}/documents/${id}/search?q=${encodeURIComponent(query)}`);
+  const data = await handleResponse(response);
+  return data.results || [];
 }
 
 /**

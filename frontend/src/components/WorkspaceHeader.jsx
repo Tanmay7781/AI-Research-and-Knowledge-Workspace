@@ -1,12 +1,14 @@
 import React from 'react';
-import { Plus, ArrowLeft, Trash2 } from 'lucide-react';
+import { Plus, ArrowLeft, Trash2, MessageSquare } from 'lucide-react';
 
 export default function WorkspaceHeader({
   activeDocument,
   onNavigateHome,
   onOpenUpload,
+  onOpenWorkspaceChat,
   onDeleteDocument,
-  isDeleting
+  isDeleting,
+  hasDocuments = false
 }) {
   return (
     <header className="top-header">
@@ -41,10 +43,18 @@ export default function WorkspaceHeader({
             </button>
           </>
         ) : (
-          <button className="btn btn-primary" onClick={onOpenUpload}>
-            <Plus size={16} />
-            <span>Upload PDF</span>
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {hasDocuments && (
+              <button className="btn btn-secondary" onClick={onOpenWorkspaceChat}>
+                <MessageSquare size={16} />
+                <span>Multi-Doc Chat</span>
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={onOpenUpload}>
+              <Plus size={16} />
+              <span>Upload PDF</span>
+            </button>
+          </div>
         )}
       </div>
     </header>
