@@ -130,7 +130,9 @@ export default function WorkspaceChatModal({ isOpen, onClose, documents = [] }) 
                 {msg.type === 'assistant' && (
                   <div className="chat-bubble chat-bubble-assistant">
                     <div className="chat-text markdown-body">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {String(msg.text || '').replace(/\\n/g, '\n').replace(/\\t/g, '\t')}
+                      </ReactMarkdown>
                     </div>
 
                     {msg.sources && msg.sources.length > 0 && (

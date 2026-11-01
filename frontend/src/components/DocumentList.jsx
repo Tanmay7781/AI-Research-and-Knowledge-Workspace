@@ -6,7 +6,9 @@ export default function DocumentList({
   onOpenDocument,
   onAnalyzeDocument,
   onDeleteDocument,
-  analyzingDocIds = []
+  analyzingDocIds = [],
+  selectedCompareIds = [],
+  onToggleCompareSelect
 }) {
   return (
     <div className="document-grid">
@@ -18,6 +20,8 @@ export default function DocumentList({
           onAnalyzeDocument={onAnalyzeDocument}
           onDeleteDocument={onDeleteDocument}
           isAnalyzing={analyzingDocIds.includes(doc.id)}
+          isSelectedForCompare={selectedCompareIds.includes(doc.id)}
+          onToggleCompareSelect={onToggleCompareSelect}
         />
       ))}
     </div>

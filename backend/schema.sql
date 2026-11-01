@@ -43,7 +43,9 @@ CREATE TABLE IF NOT EXISTS documents (
     extracted_text TEXT,
     status VARCHAR(50) NOT NULL DEFAULT 'uploaded', -- 'uploaded', 'processing', 'analyzed', 'failed'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    analyzed_at TIMESTAMP WITH TIME ZONE
+    analyzed_at TIMESTAMP WITH TIME ZONE,
+    file_sha256 VARCHAR(64),
+    search_vector tsvector GENERATED ALWAYS AS (to_tsvector('english', COALESCE(extracted_text, ''))) STORED
 );
 
 -- 4. Document Analyses Table
@@ -103,12 +105,47 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
+-- 6. Document Annotations Table (User notes, highlights, and annotations)
+CREATE TABLE IF NOT EXISTS document_annotations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    page_number INTEGER,
+    selected_text TEXT,
+    note_text TEXT NOT NULL DEFAULT '',
+    annotation_type VARCHAR(50) NOT NULL DEFAULT 'note', -- 'note', 'highlight'
+    color VARCHAR(50) DEFAULT 'yellow', -- 'yellow', 'green', 'blue', 'pink'
+    context_before TEXT,
+    context_after TEXT,
+    position JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. Document Versions Table (Version history & revision tracking)
+CREATE TABLE IF NOT EXISTS document_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL,
+    original_filename VARCHAR(255) NOT NULL,
+    stored_filename VARCHAR(255) NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size BIGINT,
+    file_sha256 VARCHAR(64),
+    extracted_text TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (document_id, version_number)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_documents_workspace_id ON documents(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(status);
+CREATE INDEX IF NOT EXISTS idx_documents_file_sha256 ON documents(file_sha256);
+CREATE INDEX IF NOT EXISTS idx_documents_search_vector ON documents USING gin(search_vector);
 CREATE INDEX IF NOT EXISTS idx_document_analyses_document_id ON document_analyses(document_id);
 CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_document_chunks_doc_chunk ON document_chunks(document_id, chunk_index);
+CREATE INDEX IF NOT EXISTS idx_document_annotations_doc_created ON document_annotations(document_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_document_versions_document ON document_versions(document_id, version_number DESC);
 
 -- =====================================================================
 -- OPTIONAL PGVECTOR EXTENSION (If installed in PostgreSQL directory):

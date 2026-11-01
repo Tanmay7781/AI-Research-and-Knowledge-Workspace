@@ -22,18 +22,25 @@ function isValidUuid(id) {
  * @returns {string} Resolved absolute path
  */
 function resolveFilePath(storedFilePath, storedFilename) {
-  if (storedFilePath && fs.existsSync(storedFilePath)) {
-    return storedFilePath;
-  }
-  // Try relative to backend uploads directory
   const uploadsDir = path.resolve(__dirname, '../../uploads');
   if (storedFilename) {
-    const candidate = path.join(uploadsDir, storedFilename);
+    const safeFilename = path.basename(storedFilename);
+    const candidate = path.join(uploadsDir, safeFilename);
     if (fs.existsSync(candidate)) {
       return candidate;
     }
   }
-  return storedFilePath;
+  if (storedFilePath) {
+    const safeBase = path.basename(storedFilePath);
+    const candidate = path.join(uploadsDir, safeBase);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+    if (fs.existsSync(storedFilePath)) {
+      return storedFilePath;
+    }
+  }
+  return null;
 }
 
 /**
@@ -83,6 +90,49 @@ async function uploadDocument(req, res, next) {
     const { originalname, filename, path: filePath, size, mimetype } = req.file;
     const workspaceId = await getDefaultWorkspaceId();
 
+    // Compute SHA-256 hash using actual file bytes
+    let fileSha256 = null;
+    try {
+      const fileBuffer = fs.readFileSync(filePath);
+      fileSha256 = require('crypto').createHash('sha256').update(fileBuffer).digest('hex');
+    } catch (hashErr) {
+      console.warn('Could not compute SHA-256 for uploaded file:', hashErr.message);
+    }
+
+    // Check for exact duplicate unless force flag is provided
+    const isForce = req.body?.force === 'true' || req.body?.force === true || req.query?.force === 'true';
+    if (fileSha256 && !isForce) {
+      const duplicateCheck = await db.query(`
+        SELECT 
+          d.id,
+          d.original_filename,
+          d.file_size,
+          d.status,
+          d.created_at,
+          d.file_sha256,
+          (da.id IS NOT NULL) AS has_analysis
+        FROM documents d
+        LEFT JOIN document_analyses da ON d.id = da.document_id
+        WHERE d.file_sha256 = $1
+        LIMIT 1;
+      `, [fileSha256]);
+
+      if (duplicateCheck.rows.length > 0) {
+        // Clean up newly uploaded duplicate file to save disk space
+        if (fs.existsSync(filePath)) {
+          try {
+            fs.unlinkSync(filePath);
+          } catch (e) {}
+        }
+
+        return res.status(409).json({
+          isDuplicate: true,
+          message: `An exact duplicate of this file already exists as "${duplicateCheck.rows[0].original_filename}".`,
+          existingDocument: duplicateCheck.rows[0]
+        });
+      }
+    }
+
     // Extract text from the PDF immediately upon upload
     let initialExtractedText = null;
     try {
@@ -101,8 +151,9 @@ async function uploadDocument(req, res, next) {
         file_size,
         mime_type,
         extracted_text,
-        status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        status,
+        file_sha256
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *;
     `;
 
@@ -114,11 +165,40 @@ async function uploadDocument(req, res, next) {
       size,
       mimetype || 'application/pdf',
       initialExtractedText,
-      'uploaded'
+      'uploaded',
+      fileSha256
     ];
 
     const result = await db.query(insertSql, values);
     const document = result.rows[0];
+
+    // Seed initial version 1 in document_versions table
+    try {
+      await db.query(`
+        INSERT INTO document_versions (
+          document_id,
+          version_number,
+          original_filename,
+          stored_filename,
+          file_path,
+          file_size,
+          file_sha256,
+          extracted_text,
+          created_at
+        ) VALUES ($1, 1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+        ON CONFLICT (document_id, version_number) DO NOTHING;
+      `, [
+        document.id,
+        originalname,
+        filename,
+        filePath,
+        size,
+        fileSha256,
+        initialExtractedText
+      ]);
+    } catch (vErr) {
+      console.warn('Could not seed version 1 for new document:', vErr.message);
+    }
 
     return res.status(201).json({
       message: 'Document uploaded successfully',
@@ -151,6 +231,7 @@ async function getDocuments(req, res, next) {
         d.original_filename,
         d.stored_filename,
         d.file_size,
+        d.file_sha256,
         d.mime_type,
         d.status,
         d.created_at,
@@ -415,12 +496,126 @@ async function deleteDocument(req, res, next) {
   }
 }
 
+/**
+/**
+ * GET /api/documents/:id/file
+ * Streams the original PDF binary directly with proper inline headers for in-browser PDF viewers.
+ * Supports HTTP byte range requests (Range, 206 Partial Content, Content-Range, Accept-Ranges).
+ */
+async function serveDocumentFile(req, res, next) {
+  const documentId = req.params.id;
+  if (!isValidUuid(documentId)) {
+    return res.status(400).json({ error: 'Invalid document ID format. Expected a valid UUID.' });
+  }
+
+  try {
+    const docResult = await db.query(
+      'SELECT file_path, stored_filename, original_filename, mime_type, file_size FROM documents WHERE id = $1;',
+      [documentId]
+    );
+
+    if (docResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Document not found.' });
+    }
+
+    const doc = docResult.rows[0];
+    const resolvedPath = resolveFilePath(doc.file_path, doc.stored_filename);
+
+    if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+      return res.status(404).json({ error: 'PDF file not found on disk.' });
+    }
+
+    // Support explicit download query flag
+    if (req.query.download === 'true') {
+      return res.download(resolvedPath, doc.original_filename);
+    }
+
+    const stat = fs.statSync(resolvedPath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+
+    res.setHeader('Content-Type', doc.mime_type || 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.original_filename)}"`);
+    res.setHeader('Accept-Ranges', 'bytes');
+
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      if (isNaN(start) || start >= fileSize || end >= fileSize || start > end) {
+        res.setHeader('Content-Range', `bytes */${fileSize}`);
+        return res.status(416).json({ error: 'Requested range not satisfiable' });
+      }
+
+      const chunkSize = (end - start) + 1;
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Content-Length', chunkSize);
+
+      const stream = fs.createReadStream(resolvedPath, { start, end });
+      stream.on('error', (streamErr) => {
+        if (!res.headersSent) next(streamErr);
+      });
+      return stream.pipe(res);
+    } else {
+      res.status(200);
+      res.setHeader('Content-Length', fileSize);
+      const stream = fs.createReadStream(resolvedPath);
+      stream.on('error', (streamErr) => {
+        if (!res.headersSent) next(streamErr);
+      });
+      return stream.pipe(res);
+    }
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /api/documents/:id/download
+ * Dedicated download endpoint that forces Content-Disposition: attachment for downloads.
+ */
+async function downloadDocumentFile(req, res, next) {
+  const documentId = req.params.id;
+  if (!isValidUuid(documentId)) {
+    return res.status(400).json({ error: 'Invalid document ID format. Expected a valid UUID.' });
+  }
+
+  try {
+    const docResult = await db.query(
+      'SELECT file_path, stored_filename, original_filename FROM documents WHERE id = $1;',
+      [documentId]
+    );
+
+    if (docResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Document not found.' });
+    }
+
+    const doc = docResult.rows[0];
+    const resolvedPath = resolveFilePath(doc.file_path, doc.stored_filename);
+
+    if (!resolvedPath || !fs.existsSync(resolvedPath)) {
+      return res.status(404).json({ error: 'PDF file not found on disk.' });
+    }
+
+    return res.download(resolvedPath, doc.original_filename);
+  } catch (error) {
+    next(error);
+  }
+}
+
 module.exports = {
   isValidUuid,
+  resolveFilePath,
   getDefaultWorkspaceId,
   uploadDocument,
   getDocuments,
   getDocumentById,
   analyzeDocument,
-  deleteDocument
+  deleteDocument,
+  serveDocumentFile,
+  downloadDocumentFile
 };
+
+

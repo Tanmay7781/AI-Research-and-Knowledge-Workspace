@@ -17,11 +17,16 @@ import FlashcardsTab from './tabs/FlashcardsTab';
 import QuizTab from './tabs/QuizTab';
 import ImportantTermsTab from './tabs/ImportantTermsTab';
 import ChatTab from './tabs/ChatTab';
+import NotesTab from './tabs/NotesTab';
+import VersionsTab from './tabs/VersionsTab';
+import PdfReader from './pdf/PdfReader';
+import { Bookmark, History, Highlighter } from 'lucide-react';
 
 export default function DocumentWorkspace({
   document,
   onAnalyzeDocument,
-  isAnalyzing
+  isAnalyzing,
+  onDocumentUpdated
 }) {
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -34,7 +39,10 @@ export default function DocumentWorkspace({
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: BookOpen },
+    { id: 'reader', label: 'PDF Reader & Highlights', icon: Highlighter },
     { id: 'chat', label: 'Chat (RAG)', icon: MessageSquare },
+    { id: 'notes', label: 'Notes & Annotations', icon: Bookmark },
+    { id: 'versions', label: 'Version History', icon: History },
     { id: 'keypoints', label: 'Key Points', icon: CheckCircle2 },
     { id: 'flashcards', label: 'Flashcards', icon: Layers },
     { id: 'quiz', label: 'Quiz', icon: HelpCircle },
@@ -96,8 +104,9 @@ export default function DocumentWorkspace({
       <div className="workspace-tabs">
         {tabs.map((tab) => {
           const Icon = tab.icon;
-          // Hide analysis-specific tabs if document is not analyzed yet, except Chat
-          if (!isAnalyzed && tab.id !== 'overview' && tab.id !== 'chat') {
+          // Hide analysis-specific tabs if document is not analyzed yet
+          const isAnalysisOnly = ['keypoints', 'flashcards', 'quiz', 'terms'].includes(tab.id);
+          if (!isAnalyzed && isAnalysisOnly) {
             return null;
           }
           return (
@@ -115,8 +124,14 @@ export default function DocumentWorkspace({
 
       {/* Body Area */}
       <div className="tab-pane">
-        {activeTab === 'chat' ? (
+        {activeTab === 'reader' ? (
+          <PdfReader document={document} />
+        ) : activeTab === 'chat' ? (
           <ChatTab document={document} />
+        ) : activeTab === 'notes' ? (
+          <NotesTab document={document} />
+        ) : activeTab === 'versions' ? (
+          <VersionsTab document={document} onDocumentUpdated={onDocumentUpdated} />
         ) : isAnalyzed ? (
           <>
             {activeTab === 'overview' && <OverviewTab analysis={analysis} />}
