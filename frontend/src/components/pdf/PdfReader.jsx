@@ -27,9 +27,12 @@ import {
 } from '../../services/api';
 import RevisionModeModal from './RevisionModeModal';
 
+// Normalize PDF.js module across ESM/CJS environments (e.g. Vite bundler)
+const pdfjs = pdfjsLib.default || pdfjsLib;
+
 // Point to local public worker for reliable, same-origin worker initialization
-if (typeof window !== 'undefined' && pdfjsLib.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
+if (typeof window !== 'undefined' && pdfjs.GlobalWorkerOptions) {
+  pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js';
 }
 
 export default function PdfReader({ document: doc }) {
@@ -74,37 +77,25 @@ export default function PdfReader({ document: doc }) {
     loadAnnotations();
   }, [loadAnnotations]);
 
-  // Load PDF Document via direct arrayBuffer fetch (robust across all browsers and workers)
+  // Load PDF Document via PDF.js URL streaming
   useEffect(() => {
     if (!doc?.id) return;
 
     let isMounted = true;
-    let currentLoadingTask = null;
+    let loadingTask = null;
     setIsLoadingPdf(true);
     setPdfError(null);
 
     const loadPdfData = async () => {
       try {
         const pdfUrl = getDocumentFileUrl(doc.id);
-        const res = await fetch(pdfUrl);
-        if (!res.ok) {
-          let errText = `Server returned HTTP ${res.status}: ${res.statusText}`;
-          try {
-            const errJson = await res.json();
-            if (errJson?.error) errText = errJson.error;
-          } catch (e) {}
-          throw new Error(errText);
-        }
-        const arrayBuffer = await res.arrayBuffer();
-        if (!isMounted) return;
-
-        currentLoadingTask = pdfjsLib.getDocument({
-          data: new Uint8Array(arrayBuffer),
+        loadingTask = pdfjs.getDocument({
+          url: pdfUrl,
           cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
           cMapPacked: true
         });
 
-        const loadedPdf = await currentLoadingTask.promise;
+        const loadedPdf = await loadingTask.promise;
         if (!isMounted) return;
 
         setPdfDoc(loadedPdf);
@@ -113,8 +104,11 @@ export default function PdfReader({ document: doc }) {
         setIsLoadingPdf(false);
       } catch (err) {
         if (!isMounted) return;
+        if (err?.name === 'RenderingCancelledException' || err?.name === 'AbortException') {
+          return;
+        }
         console.error('PDF load error:', err);
-        setPdfError(err.message || 'Failed to load PDF file');
+        setPdfError(err?.message || 'Failed to load PDF file');
         setIsLoadingPdf(false);
       }
     };
@@ -123,8 +117,8 @@ export default function PdfReader({ document: doc }) {
 
     return () => {
       isMounted = false;
-      if (currentLoadingTask) {
-        currentLoadingTask.destroy();
+      if (loadingTask) {
+        loadingTask.destroy();
       }
     };
   }, [doc?.id, retryCount]);
@@ -181,7 +175,7 @@ export default function PdfReader({ document: doc }) {
 
           // Build text layer elements
           for (const item of textContent.items) {
-            const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+            const tx = pdfjs.Util.transform(viewport.transform, item.transform);
             const fontHeight = Math.sqrt((tx[2] * tx[2]) + (tx[3] * tx[3]));
             const span = document.createElement('span');
             span.textContent = item.str;

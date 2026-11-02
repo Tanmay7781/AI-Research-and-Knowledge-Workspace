@@ -448,16 +448,14 @@ async function serveVersionFile(req, res, next) {
         'Content-Range': `bytes ${start}-${end}/${fileSize}`,
         'Accept-Ranges': 'bytes',
         'Content-Length': chunkSize,
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="${encodeURIComponent(version.original_filename)}"`
+        'Content-Type': 'application/pdf'
       });
       return stream.pipe(res);
     } else {
       res.writeHead(200, {
         'Content-Length': fileSize,
         'Content-Type': 'application/pdf',
-        'Accept-Ranges': 'bytes',
-        'Content-Disposition': `inline; filename="${encodeURIComponent(version.original_filename)}"`
+        'Accept-Ranges': 'bytes'
       });
       return fs.createReadStream(version.file_path).pipe(res);
     }

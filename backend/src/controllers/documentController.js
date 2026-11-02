@@ -535,7 +535,6 @@ async function serveDocumentFile(req, res, next) {
     const range = req.headers.range;
 
     res.setHeader('Content-Type', doc.mime_type || 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.original_filename)}"`);
     res.setHeader('Accept-Ranges', 'bytes');
 
     if (range) {
